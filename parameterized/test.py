@@ -449,7 +449,6 @@ class TestParameterizedClassDict(TestCase):
     foo = 0
     bar = 0
 
-
     def test_method(self):
         missing_tests.remove("%s:test_method(%r, %r)" %(
             self.__class__.__name__,
