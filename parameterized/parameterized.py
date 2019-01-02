@@ -13,6 +13,12 @@ except ImportError:
 
 from unittest import TestCase
 
+try:
+    from unittest import SkipTest
+except ImportError:
+    class SkipTest(Exception):
+        pass
+
 PY3 = sys.version_info[0] == 3
 PY2 = sys.version_info[0] == 2
 
@@ -39,6 +45,30 @@ else:
         return MethodType(func, instance, type)
 
 _param = namedtuple("param", "args kwargs")
+
+def skip_on_empty_helper(*a, **kw):
+    raise SkipTest("parameterized input is empty")
+
+def reapply_patches_if_need(func):
+
+    def dummy_wrapper(orgfunc):
+        @wraps(orgfunc)
+        def dummy_func(*args, **kwargs):
+            return orgfunc(*args, **kwargs)
+        return dummy_func
+
+    if hasattr(func, 'patchings'):
+        func = dummy_wrapper(func)
+        tmp_patchings = func.patchings
+        delattr(func, 'patchings')
+        for patch_obj in tmp_patchings:
+            func = patch_obj.decorate_callable(func)
+    return func
+
+def delete_patches_if_need(func):
+    if hasattr(func, 'patchings'):
+        func.patchings[:] = []
+
 
 class param(_param):
     """ Represents a single parameter to a test case.
@@ -261,6 +291,7 @@ def detect_runner():
             _test_runner_guess = None
     return _test_runner_guess
 
+
 class parameterized(object):
     """ Parameterize a test case::
 
@@ -282,9 +313,10 @@ class parameterized(object):
                 assert_equal(a + b, expected)
         """
 
-    def __init__(self, input, doc_func=None):
+    def __init__(self, input, doc_func=None, skip_on_empty=False):
         self.get_input = self.input_as_callable(input)
         self.doc_func = doc_func or default_doc_func
+        self.skip_on_empty = skip_on_empty
 
     def __call__(self, test_func):
         self.assert_not_in_testcase_subclass()
@@ -320,9 +352,21 @@ class parameterized(object):
                     if test_self is not None:
                         delattr(test_cls, test_func.__name__)
                     wrapper.__doc__ = original_doc
-        wrapper.parameterized_input = self.get_input()
+
+        input = self.get_input()
+        if not input:
+            if not self.skip_on_empty:
+                raise ValueError(
+                    "Parameters iterable is empty (hint: use "
+                    "`parameterized([], skip_on_empty=True)` to skip "
+                    "this test when the input is empty)"
+                )
+            wrapper = wraps(test_func)(lambda: skip_on_empty_helper())
+
+        wrapper.parameterized_input = input
         wrapper.parameterized_func = test_func
         test_func.__name__ = "_parameterized_original_%s" %(test_func.__name__, )
+
         return wrapper
 
     def param_as_nose_tuple(self, test_self, func, num, p):
@@ -387,7 +431,8 @@ class parameterized(object):
         return [ param.from_decorator(p) for p in input_values ]
 
     @classmethod
-    def expand(cls, input, name_func=None, doc_func=None, **legacy):
+    def expand(cls, input, name_func=None, doc_func=None, skip_on_empty=False,
+               **legacy):
         """ A "brute force" method of parameterizing test cases. Creates new
             test cases and injects them into the namespace that the wrapped
             function is being defined in. Useful for parameterizing tests in
@@ -424,10 +469,30 @@ class parameterized(object):
             frame_locals = frame[0].f_locals
 
             paramters = cls.input_as_callable(input)()
+
+            if not paramters:
+                if not skip_on_empty:
+                    raise ValueError(
+                        "Parameters iterable is empty (hint: use "
+                        "`parameterized.expand([], skip_on_empty=True)` to skip "
+                        "this test when the input is empty)"
+                    )
+                return wraps(f)(lambda: skip_on_empty_helper())
+
+            digits = len(str(len(paramters) - 1))
             for num, p in enumerate(paramters):
-                name = name_func(f, num, p)
-                frame_locals[name] = cls.param_as_standalone_func(p, f, name)
+                name = name_func(f, "{num:0>{digits}}".format(digits=digits, num=num), p)
+                # If the original function has patches applied by 'mock.patch',
+                # re-construct all patches on the just former decoration layer
+                # of param_as_standalone_func so as not to share
+                # patch objects between new functions
+                nf = reapply_patches_if_need(f)
+                frame_locals[name] = cls.param_as_standalone_func(p, nf, name)
                 frame_locals[name].__doc__ = doc_func(f, num, p)
+
+            # Delete original patches to prevent new function from evaluating
+            # original patching object as well as re-constructed patches.
+            delete_patches_if_need(f)
 
             f.__test__ = False
         return parameterized_expand_wrapper
@@ -455,3 +520,61 @@ class parameterized(object):
     @classmethod
     def to_safe_name(cls, s):
         return str(re.sub("[^a-zA-Z0-9_]+", "_", s))
+
+
+def parameterized_class(attrs, input_values=None):
+    """ Parameterizes a test class by setting attributes on the class.
+
+        Can be used in two ways:
+
+        1) With a list of dictionaries containing attributes to override::
+
+            @parameterized_class([
+                { "username": "foo" },
+                { "username": "bar", "access_level": 2 },
+            ])
+            class TestUserAccessLevel(TestCase):
+                ...
+
+        2) With a tuple of attributes, then a list of tuples of values:
+
+            @parameterized_class(("username", "access_level"), [
+                ("foo", 1),
+                ("bar", 2)
+            ])
+            class TestUserAccessLevel(TestCase):
+                ...
+
+    """
+
+    if isinstance(attrs, string_types):
+        attrs = [attrs]
+
+    input_dicts = (
+        attrs if input_values is None else
+        [dict(zip(attrs, vals)) for vals in input_values]
+    )
+
+    def decorator(base_class):
+        test_class_module = sys.modules[base_class.__module__].__dict__
+        for idx, input_dict in enumerate(input_dicts):
+            test_class_dict = dict(base_class.__dict__)
+            test_class_dict.update(input_dict)
+
+            name_suffix = input_values and input_values[idx]
+            if isinstance(name_suffix, (list, tuple)) and len(input_values) > 0:
+                name_suffix = name_suffix[0]
+            name_suffix = (
+                "_%s" %(name_suffix, ) if isinstance(name_suffix, string_types) else
+                ""
+            )
+
+            name = "%s_%s%s" %(
+                base_class.__name__,
+                idx,
+                name_suffix,
+            )
+
+            test_class_module[name] = type(name, (base_class, ), test_class_dict)
+
+    return decorator
