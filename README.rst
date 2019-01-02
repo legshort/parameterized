@@ -11,58 +11,57 @@ parameterized testing for py.test, parameterized testing for unittest.
 
 .. code:: python
 
-    # test_math.py
-    from nose.tools import assert_equal
-    from parameterized import parameterized
+   # test_math.py
+   from nose.tools import assert_equal
+   from parameterized import parameterized, parameterized_class
 
-    import unittest
-    import math
+   import unittest
+   import math
 
-    @parameterized([
-        (2, 2, 4),
-        (2, 3, 8),
-        (1, 9, 1),
-        (0, 9, 0),
-    ])
-    def test_pow(base, exponent, expected):
-        assert_equal(math.pow(base, exponent), expected)
+   @parameterized([
+       (2, 2, 4),
+       (2, 3, 8),
+       (1, 9, 1),
+       (0, 9, 0),
+   ])
+   def test_pow(base, exponent, expected):
+      assert_equal(math.pow(base, exponent), expected)
 
-    class TestMathUnitTest(unittest.TestCase):
-        @parameterized.expand([
-            ("negative", -1.5, -2.0),
-            ("integer", 1, 1.0),
-            ("large fraction", 1.6, 1),
-        ])
-        def test_floor(self, name, input, expected):
-            assert_equal(math.floor(input), expected)
+   class TestMathUnitTest(unittest.TestCase):
+      @parameterized.expand([
+          ("negative", -1.5, -2.0),
+          ("integer", 1, 1.0),
+          ("large fraction", 1.6, 1),
+      ])
+      def test_floor(self, name, input, expected):
+          assert_equal(math.floor(input), expected)
 
-    @parameterized.parameterized_class(('a', 'b', 'c'), [
-        (0, 5, 6),
-        (None, None, None),
-        ({}, [], [])
-    ])
-    class TestMathClass(unittest.TestCase):
-        def _assertions(self):
-            assert hasattr(self, 'a')
-            assert hasattr(self, 'b')
-            assert hasattr(self, 'c')
+   @parameterized_class(('a', 'b', 'expected_sum', 'expected_product'), [
+      (1, 2, 3, 2),
+      (5, 5, 10, 25),
+   ])
+   class TestMathClass(unittest.TestCase):
+      def test_add(self):
+         assert_equal(self.a + self.b, self.expected_sum)
 
-        def test_method_a(self):
-            self._assertions()
+      def test_multiply(self):
+         assert_equal(self.a * self.b, self.expected_product)
 
-        def test_method_b(self):
-            self._assertions()
+   @parameterized_class([
+      { "a": 3, "expected": 2 },
+      { "b": 5, "expected": -4 },
+   ])
+   class TestMathClassDict(unittest.TestCase):
+      a = 1
+      b = 1
+
+      def test_subtract(self):
+         assert_equal(self.a - self.b, self.expected)
 
 
 With nose (and nose2)::
 
     $ nosetests -v test_math.py
-    test_method_a (test_math.TestMathClass_1) ... ok
-    test_method_b (test_math.TestMathClass_1) ... ok
-    test_method_a (test_math.TestMathClass_2) ... ok
-    test_method_b (test_math.TestMathClass_2) ... ok
-    test_method_a (test_math.TestMathClass_3) ... ok
-    test_method_b (test_math.TestMathClass_3) ... ok
     test_floor_0_negative (test_math.TestMathUnitTest) ... ok
     test_floor_1_integer (test_math.TestMathUnitTest) ... ok
     test_floor_2_large_fraction (test_math.TestMathUnitTest) ... ok
@@ -70,9 +69,14 @@ With nose (and nose2)::
     test_math.test_pow(2, 3, 8, {}) ... ok
     test_math.test_pow(1, 9, 1, {}) ... ok
     test_math.test_pow(0, 9, 0, {}) ... ok
+    test_add (test_math.TestMathClass_0) ... ok
+    test_multiply (test_math.TestMathClass_0) ... ok
+    test_add (test_math.TestMathClass_1) ... ok
+    test_multiply (test_math.TestMathClass_1) ... ok
+    test_subtract (test_math.TestMathClassDict_0) ... ok
 
     ----------------------------------------------------------------------
-    Ran 13 tests in 0.015s
+    Ran 12 tests in 0.015s
 
     OK
 
@@ -87,12 +91,6 @@ With py.test (version 2.0 and above)::
     platform darwin -- Python 3.6.1, pytest-3.1.3, py-1.4.34, pluggy-0.4.0
     collecting ... collected 13 items
 
-    test_math.py::TestMathClass_1::test_method_a PASSED
-    test_math.py::TestMathClass_1::test_method_b PASSED
-    test_math.py::TestMathClass_2::test_method_a PASSED
-    test_math.py::TestMathClass_2::test_method_b PASSED
-    test_math.py::TestMathClass_3::test_method_a PASSED
-    test_math.py::TestMathClass_3::test_method_b PASSED
     test_math.py::test_pow::[0] PASSED
     test_math.py::test_pow::[1] PASSED
     test_math.py::test_pow::[2] PASSED
@@ -100,23 +98,27 @@ With py.test (version 2.0 and above)::
     test_math.py::TestMathUnitTest::test_floor_0_negative PASSED
     test_math.py::TestMathUnitTest::test_floor_1_integer PASSED
     test_math.py::TestMathUnitTest::test_floor_2_large_fraction PASSED
-    ==================== 13 passed, 4 warnings in 0.16 seconds =====================
+    test_math.py::TestMathClass_0::test_add PASSED
+    test_math.py::TestMathClass_0::test_multiply PASSED
+    test_math.py::TestMathClass_1::test_add PASSED
+    test_math.py::TestMathClass_1::test_multiply PASSED
+    test_math.py::TestMathClassDict_0::test_subtract PASSED
+    ==================== 12 passed, 4 warnings in 0.16 seconds =====================
 
 With unittest (and unittest2)::
 
     $ python -m unittest -v test_math
-    test_method_a (test_math.TestMathClass_1) ... ok
-    test_method_b (test_math.TestMathClass_1) ... ok
-    test_method_a (test_math.TestMathClass_2) ... ok
-    test_method_b (test_math.TestMathClass_2) ... ok
-    test_method_a (test_math.TestMathClass_3) ... ok
-    test_method_b (test_math.TestMathClass_3) ... ok
     test_floor_0_negative (test_math.TestMathUnitTest) ... ok
     test_floor_1_integer (test_math.TestMathUnitTest) ... ok
     test_floor_2_large_fraction (test_math.TestMathUnitTest) ... ok
+    test_add (test_math.TestMathClass_0) ... ok
+    test_multiply (test_math.TestMathClass_0) ... ok
+    test_add (test_math.TestMathClass_1) ... ok
+    test_multiply (test_math.TestMathClass_1) ... ok
+    test_subtract (test_math.TestMathClassDict_0) ... ok
 
     ----------------------------------------------------------------------
-    Ran 9 tests in 0.001s
+    Ran 8 tests in 0.001s
 
     OK
 
@@ -140,8 +142,16 @@ With green::
     .   test_floor_0_negative
     .   test_floor_1_integer
     .   test_floor_2_large_fraction
+      TestMathClass_0
+    .   test_add
+    .   test_multiply
+      TestMathClass_1
+    .   test_add
+    .   test_multiply
+      TestMathClassDict_0
+    .   test_subtract
 
-    Ran 9 tests in 0.121s
+    Ran 12 tests in 0.121s
 
     OK (passes=9)
 
@@ -168,10 +178,14 @@ __ https://travis-ci.org/wolever/parameterized
    * -
      - Py2.6
      - Py2.7
-     - Py3.3
      - Py3.4
+     - Py3.5
+     - Py3.6
+     - Py3.7
      - PyPy
    * - nose
+     - yes
+     - yes
      - yes
      - yes
      - yes
@@ -183,7 +197,11 @@ __ https://travis-ci.org/wolever/parameterized
      - yes
      - yes
      - yes
+     - yes
+     - yes
    * - py.test
+     - yes
+     - yes
      - yes
      - yes
      - yes
@@ -196,8 +214,12 @@ __ https://travis-ci.org/wolever/parameterized
      - yes
      - yes
      - yes
+     - yes
+     - yes
    * - | unittest2
        | (``@parameterized.expand``)
+     - yes
+     - yes
      - yes
      - yes
      - yes
@@ -409,45 +431,47 @@ with the ``doc_func`` argument:
 
     OK
 
-Finally ``@parameterized.parameterized_class`` works for an entire test class, the first parameter is a tuple
-of strings or a single string, this data is going to be converted as a class properties.
-The second argument is an array of tuples, each tuple must have the same length as the first parameter because
- they correspond to the property values:
+Finally ``@parameterized.expand_class`` parameterizes an entire class, using
+either a list of attributes, or a list of dicts that will be applied to the
+class:
 
 .. code:: python
-    from django.test import Client, TestCase
-    from parameterized import parameterized
 
-    @parameterized.parameterized_class('version_url', ['/v1.1/', '/v1.2/'])
-    class TestAPI(TestCase):
-        def _assertions(self):
-            assert hasattr(self, 'version_url')
+   from yourapp.models import User
+   from parameterized import parameterized_class
 
-        def test_url_a(self):
-            self.client.get(self.version_url + '/url_a'
-            self._assertions()
+   @parameterized_class(("username", "access_level", "expected_status_code"), [
+      ("user_1", 1, 200),
+      ("user_2", 2, 404)
+   ])
+   class TestUserAccessLevel(TestCase):
+      def setUp(self):
+         self.client.force_login(User.objects.get(username=self.username)[0])
 
-        def test_url_b(self):
-            self.client.get(self.version_url + '/url_b'
-            self._assertions()
+      def test_url_a(self):
+         response = self.client.get("/url")
+         self.assertEqual(response.status_code, self.expected_status_code)
+
+      def tearDown(self):
+         self.client.logout()
 
 
-    @parameterized.parameterized_class(('a', 'b', 'c'), [
-        (0, 5, 6),
-        (None, None, None),
-        ({}, [], [])
-    ])
-    class TestMathClass(unittest.TestCase):
-        def _assertions(self):
-            assert hasattr(self, 'a')
-            assert hasattr(self, 'b')
-            assert hasattr(self, 'c')
+   @parameterized_class([
+      { "username": "user_1", "access_level": 1 },
+      { "username": "user_2", "access_level": 2, "expected_status_code": 404 },
+   ])
+   class TestUserAccessLevel(TestCase):
+      expected_status_code = 200
 
-        def test_method_a(self):
-            self._assertions()
+      def setUp(self):
+         self.client.force_login(User.objects.get(username=self.username)[0])
 
-        def test_method_b(self):
-            self._assertions()
+      def test_url_a(self):
+         response = self.client.get('/url')
+         self.assertEqual(response.status_code, self.expected_status_code)
+
+      def tearDown(self):
+         self.client.logout()
 
 
 Migrating from ``nose-parameterized`` to ``parameterized``
